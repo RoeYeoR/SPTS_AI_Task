@@ -38,7 +38,14 @@ public class SearchAlgorithm {
     private static List<String> astarSearch(String[][] startState, String[][] goalState, boolean openListFlag) {
         Map<String, Node> openList = new HashMap<>();  // Hash table for open list
         Set<String> closedList = new HashSet<>();     // Hash table for closed list
-        PriorityQueue<Node> pQueue = new PriorityQueue<>((a, b) -> a.f - b.f);  // For A* ordering
+        // Modified priority queue to consider generation time
+        PriorityQueue<Node> pQueue = new PriorityQueue<>((a, b) -> {
+            if (a.f != b.f) {
+                return a.f - b.f;
+            }
+            // If f-values are equal, prefer node generated earlier
+            return Long.compare(a.generationTime, b.generationTime);
+        });
         long startTime = System.nanoTime();
 
         Node startNode = new Node(startState, null, 0, Heuristic.heuristic(startState, goalState));
@@ -412,65 +419,83 @@ public class SearchAlgorithm {
         
         Node startNode = new Node(startState, null, 0, Heuristic.heuristic(startState, goalState));
         Stack<Node> stack = new Stack<>();
+        HashSet<String> inStack = new HashSet<>();  // For faster loop detection
         stack.push(startNode);
+        inStack.add(Arrays.deepToString(startNode.state));
         
-        // Initial upper bound is f(start) = g(start) + h(start)
-        int threshold = startNode.pathCost + startNode.h;
+        int upperBound = Integer.MAX_VALUE;
         List<String> bestPath = null;
         
-        while (!stack.isEmpty()) {
+        while (!stack.isEmpty() && nodesGenerated < 10) {  // Add node limit check
             Node currentNode = stack.peek();
             
             if (openListFlag) {
-                System.out.println("Current threshold: " + threshold);
-                System.out.println("Exploring state: " + Arrays.deepToString(currentNode.state));
+                System.out.println("Current upper bound: " + upperBound);
+                System.out.println("Current f-value: " + currentNode.f);
+                System.out.println("Current g-value: " + currentNode.pathCost);
+                System.out.println("Current h-value: " + currentNode.h);
+                System.out.println("Nodes generated: " + nodesGenerated);
+            }
+            
+            // If current node's f-value exceeds upper bound, backtrack
+            if (currentNode.f >= upperBound) {
+                stack.pop();
+                inStack.remove(Arrays.deepToString(currentNode.state));
+                continue;
             }
             
             if (isGoalState(currentNode.state, goalState)) {
-                int currentCost = currentNode.pathCost;
-                if (currentCost < threshold) {
-                    threshold = currentCost;
-                    bestPath = reconstructPath(currentNode);
-                }
+                // Found a better solution
+                upperBound = currentNode.f;
+                bestPath = reconstructPath(currentNode);
                 stack.pop();
+                inStack.remove(Arrays.deepToString(currentNode.state));
                 continue;
             }
             
             List<Node> neighbors = getNeighbors(currentNode, goalState);
-            boolean deadEnd = true;
             
-            // Sort neighbors by f-value
-            neighbors.sort((a, b) -> (a.pathCost + a.h) - (b.pathCost + b.h));
-            
-            for (Node neighbor : neighbors) {
-                int f = neighbor.pathCost + neighbor.h;
-                if (f < threshold) {
-                    // Check if this state is already in the stack (loop detection)
-                    boolean isLoop = false;
-                    for (Node stackNode : stack) {
-                        if (Arrays.deepEquals(stackNode.state, neighbor.state)) {
-                            isLoop = true;
-                            break;
-                        }
-                    }
-                    
-                    if (!isLoop) {
-                        stack.push(neighbor);
-                        nodesGenerated++;
-                        deadEnd = false;
-                        break;
-                    }
+            // Sort neighbors by f-value and generation time
+            neighbors.sort((a, b) -> {
+                if (a.f != b.f) {
+                    return a.f - b.f;
                 }
+                return Long.compare(a.generationTime, b.generationTime);
+            });
+            
+            // Remove neighbors that would exceed the node limit
+            if (nodesGenerated + neighbors.size() > 10) {
+                neighbors = neighbors.subList(0, Math.max(0, 10 - nodesGenerated));
             }
             
-            if (deadEnd) {
+            // Filter out neighbors that exceed upper bound or create loops
+            boolean foundValidNeighbor = false;
+            for (Node neighbor : neighbors) {
+                String neighborState = Arrays.deepToString(neighbor.state);
+                
+                // Skip if f-value exceeds bound or state is in stack (loop)
+                if (neighbor.f >= upperBound || inStack.contains(neighborState)) {
+                    continue;
+                }
+                
+                // Found a valid neighbor
+                stack.push(neighbor);
+                inStack.add(neighborState);
+                nodesGenerated++;
+                foundValidNeighbor = true;
+                break;
+            }
+            
+            if (!foundValidNeighbor) {
+                // No valid moves, backtrack
                 stack.pop();
+                inStack.remove(Arrays.deepToString(currentNode.state));
             }
         }
         
         double timeTaken = (System.nanoTime() - startTime) / 1e9;
         if (bestPath != null) {
-            updateOutputFile(bestPath, nodesGenerated + 1, threshold, timeTaken);
+            updateOutputFile(bestPath, nodesGenerated + 1, upperBound, timeTaken);
             return bestPath;
         } else {
             updateNoPathOutput(nodesGenerated + 1, timeTaken);
@@ -524,13 +549,22 @@ public class SearchAlgorithm {
                         for (int x = 0; x < rows; x++) {
                             newState[x] = currentNode.state[x].clone();
                         }
-
+                        
                         // Make the move
                         String marble = currentNode.state[i][j];
                         newState[emptyRow][emptyCol] = marble;
                         newState[i][j] = "_";
                         
-                        Node neighbor = new Node(newState, currentNode, currentNode.pathCost + 1, 0);
+                        // Calculate cost based on marble type
+                        int moveCost;
+                        switch (marble) {
+                            case "R": moveCost = 10; break;
+                            case "G": moveCost = 3; break;
+                            case "B": moveCost = 1; break;
+                            default: moveCost = 0;
+                        }
+                        
+                        Node neighbor = new Node(newState, currentNode, currentNode.pathCost + moveCost, Heuristic.heuristic(newState, goalState));
                         neighbors.add(neighbor);
                     }
                 }
@@ -626,13 +660,15 @@ public class SearchAlgorithm {
         int pathCost;
         int h;
         int f;
+        long generationTime;  // Added generation time field
 
-        public Node(String[][] state, Node parent, int pathCost, int h) {
+        Node(String[][] state, Node parent, int pathCost, int h) {
             this.state = state;
             this.parent = parent;
             this.pathCost = pathCost;
             this.h = h;
             this.f = pathCost + h;
+            this.generationTime = nodesGenerated;  // Use nodesGenerated as generation time
         }
     }
 
