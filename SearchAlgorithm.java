@@ -39,7 +39,6 @@ public class SearchAlgorithm {
         Map<String, Node> openList = new HashMap<>();  // Hash table for open list
         Set<String> closedList = new HashSet<>();     // Hash table for closed list
         PriorityQueue<Node> pQueue = new PriorityQueue<>((a, b) -> a.f - b.f);  // For A* ordering
-        nodesGenerated = 1;
         long startTime = System.nanoTime();
 
         Node startNode = new Node(startState, null, 0, Heuristic.heuristic(startState, goalState));
@@ -47,7 +46,7 @@ public class SearchAlgorithm {
         String startStateStr = Arrays.deepToString(startState);
         openList.put(startStateStr, startNode);
         
-        while (!pQueue.isEmpty() && nodesGenerated < 11) {
+        while (!pQueue.isEmpty() && nodesGenerated < 10) {
             Node currentNode = pQueue.poll();
             String currentStateStr = Arrays.deepToString(currentNode.state);
             openList.remove(currentStateStr);
@@ -65,7 +64,7 @@ public class SearchAlgorithm {
             if (isGoalState(currentNode.state, goalState)) {
                 double timeTaken = (System.nanoTime() - startTime) / 1e9;
                 List<String> path = reconstructPath(currentNode);
-                updateOutputFile(path, nodesGenerated, currentNode.pathCost, timeTaken);
+                updateOutputFile(path, nodesGenerated + 1, currentNode.pathCost, timeTaken);
                 return path;
             }
 
@@ -114,7 +113,7 @@ public class SearchAlgorithm {
 
                             String newStateStr = Arrays.deepToString(newState);
                             if (!closedList.contains(newStateStr)) {
-                                if (nodesGenerated >= 11) {
+                                if (nodesGenerated >= 10) {
                                     break;
                                 }
                                 
@@ -138,12 +137,12 @@ public class SearchAlgorithm {
                         }
                     }
                 }
-                if (nodesGenerated >= 11) break;
+                if (nodesGenerated >= 10) break;
             }
         }
 
         double timeTaken = (System.nanoTime() - startTime) / 1e9;
-        updateNoPathOutput(nodesGenerated, timeTaken);
+        updateNoPathOutput(nodesGenerated + 1, timeTaken);
         return null;
     }
 
@@ -152,40 +151,42 @@ public class SearchAlgorithm {
         Map<String, Node> openList = new HashMap<>();  // Hash table for open list
         Set<String> closedList = new HashSet<>();     // Hash table for closed list
         Queue<Node> queue = new LinkedList<>();        // For BFS order
-        nodesGenerated = 1;
         long startTime = System.nanoTime();
+        nodesGenerated = 0;  // Start at 0 since we don't count the starting vertex
 
         Node startNode = new Node(startState, null, 0, 0);
         queue.add(startNode);
         String startStateStr = Arrays.deepToString(startState);
         openList.put(startStateStr, startNode);
         
-        while (!queue.isEmpty() && nodesGenerated < 11) {
+        while (!queue.isEmpty() && nodesGenerated < 10) {
             Node currentNode = queue.poll();
             String currentStateStr = Arrays.deepToString(currentNode.state);
             openList.remove(currentStateStr);
-            
-            if (closedList.contains(currentStateStr)) {
-                continue;
-            }
             closedList.add(currentStateStr);
-
+            
             if (openListFlag) {
-                System.out.println("Generating Neighbors for State: " + currentStateStr);
-                System.out.println("Current Node Path Cost: " + currentNode.pathCost);
+                System.out.println("Current state:");
+                for (String[] row : currentNode.state) {
+                    System.out.println(Arrays.toString(row));
+                }
+                System.out.println();
             }
 
             if (isGoalState(currentNode.state, goalState)) {
                 double timeTaken = (System.nanoTime() - startTime) / 1e9;
                 List<String> path = reconstructPath(currentNode);
-                updateOutputFile(path, nodesGenerated, currentNode.pathCost, timeTaken);
+                int actualCost = calculatePathCost(path);  // Calculate actual cost of path
+                updateOutputFile(path, nodesGenerated + 1, actualCost, timeTaken);
                 return path;
             }
 
+            // Get neighbors
             int rows = currentNode.state.length;
             int cols = currentNode.state[0].length;
+            
+            // Find empty space
             int emptyRow = -1, emptyCol = -1;
-
             for (int i = 0; i < rows; i++) {
                 for (int j = 0; j < cols; j++) {
                     if (currentNode.state[i][j].equals("_")) {
@@ -196,69 +197,69 @@ public class SearchAlgorithm {
                 }
                 if (emptyRow != -1) break;
             }
-
+            
+            // Try each possible move
             for (int i = 0; i < rows; i++) {
                 for (int j = 0; j < cols; j++) {
                     if (!currentNode.state[i][j].equals("_") && !currentNode.state[i][j].equals("X")) {
                         boolean canMove = false;
                         
+                        // Check if in same row
                         if (i == emptyRow) {
                             int dist = Math.abs(j - emptyCol);
                             if (dist == 1 || dist == cols - 1) {
                                 canMove = true;
                             }
                         }
+                        // Check if in same column
                         else if (j == emptyCol) {
                             int dist = Math.abs(i - emptyRow);
                             if (dist == 1 || dist == rows - 1) {
                                 canMove = true;
                             }
                         }
-
+                        
                         if (canMove) {
                             String[][] newState = new String[rows][cols];
                             for (int x = 0; x < rows; x++) {
                                 newState[x] = currentNode.state[x].clone();
                             }
-
+                            
+                            // Make the move
                             String marble = currentNode.state[i][j];
                             newState[emptyRow][emptyCol] = marble;
                             newState[i][j] = "_";
 
                             String newStateStr = Arrays.deepToString(newState);
                             if (!closedList.contains(newStateStr) && !openList.containsKey(newStateStr)) {
-                                if (nodesGenerated >= 11) {
+                                if (nodesGenerated >= 10) {
                                     break;
                                 }
                                 Node neighbor = new Node(newState, currentNode, currentNode.pathCost + 1, 0);
                                 queue.add(neighbor);
                                 openList.put(newStateStr, neighbor);
                                 nodesGenerated++;
-
-                                if (openListFlag) {
-                                    System.out.println("Generated new state: " + newStateStr);
-                                }
                             }
                         }
                     }
                 }
-                if (nodesGenerated >= 11) break;
+                if (nodesGenerated >= 10) break;
             }
 
             if (openListFlag) {
-                System.out.println("Total Nodes Generated: " + nodesGenerated);
+                System.out.println("Open list size: " + queue.size());
             }
         }
 
         double timeTaken = (System.nanoTime() - startTime) / 1e9;
-        updateNoPathOutput(nodesGenerated, timeTaken);
+        updateNoPathOutput(nodesGenerated + 1, timeTaken);
         return null;
     }
 
     // DFID Search Algorithm (recursive with loop avoidance)
     private static List<String> dfidSearch(String[][] startState, String[][] goalState, boolean openListFlag) {
-        nodesGenerated = 1;
         long startTime = System.nanoTime();
+        nodesGenerated = 0;  // Start at 0 since we don't count the starting vertex
         
         Node startNode = new Node(startState, null, 0, 0);
         Stack<Node> stack = new Stack<>();
@@ -275,7 +276,8 @@ public class SearchAlgorithm {
             if (result) {
                 double timeTaken = (System.nanoTime() - startTime) / 1e9;
                 List<String> path = reconstructPath(stack.peek());
-                updateOutputFile(path, nodesGenerated, stack.peek().pathCost, timeTaken);
+                int actualCost = calculatePathCost(path);  // Calculate actual cost of path
+                updateOutputFile(path, nodesGenerated + 1, actualCost, timeTaken);
                 return path;
             }
             
@@ -285,7 +287,7 @@ public class SearchAlgorithm {
         }
 
         double timeTaken = (System.nanoTime() - startTime) / 1e9;
-        updateNoPathOutput(nodesGenerated, timeTaken);
+        updateNoPathOutput(nodesGenerated + 1, timeTaken);
         return null;
     }
 
@@ -331,8 +333,8 @@ public class SearchAlgorithm {
 
     // IDA* Search Algorithm
     private static List<String> idaStarSearch(String[][] startState, String[][] goalState, boolean openListFlag) {
-        nodesGenerated = 1;
         long startTime = System.nanoTime();
+        nodesGenerated = 0;  // Start at 0 since we don't count the starting vertex
         
         Node startNode = new Node(startState, null, 0, Heuristic.heuristic(startState, goalState));
         Stack<Node> stack = new Stack<>();
@@ -355,7 +357,7 @@ public class SearchAlgorithm {
                 if (isGoalState(currentNode.state, goalState)) {
                     double timeTaken = (System.nanoTime() - startTime) / 1e9;
                     List<String> path = reconstructPath(currentNode);
-                    updateOutputFile(path, nodesGenerated, currentNode.pathCost, timeTaken);
+                    updateOutputFile(path, nodesGenerated + 1, currentNode.pathCost, timeTaken);
                     return path;
                 }
 
@@ -392,7 +394,7 @@ public class SearchAlgorithm {
             
             if (minF == Integer.MAX_VALUE) {
                 double timeTaken = (System.nanoTime() - startTime) / 1e9;
-                updateNoPathOutput(nodesGenerated, timeTaken);
+                updateNoPathOutput(nodesGenerated + 1, timeTaken);
                 return null;
             }
             
@@ -400,19 +402,20 @@ public class SearchAlgorithm {
         }
         
         double timeTaken = (System.nanoTime() - startTime) / 1e9;
-        updateNoPathOutput(nodesGenerated, timeTaken);
+        updateNoPathOutput(nodesGenerated + 1, timeTaken);
         return null;
     }
 
     private static List<String> dfbnbSearch(String[][] startState, String[][] goalState, boolean openListFlag) {
-        nodesGenerated = 1;
         long startTime = System.nanoTime();
+        nodesGenerated = 0;  // Start at 0 since we don't count the starting vertex
         
         Node startNode = new Node(startState, null, 0, Heuristic.heuristic(startState, goalState));
         Stack<Node> stack = new Stack<>();
         stack.push(startNode);
         
-        int threshold = Integer.MAX_VALUE;
+        // Initial upper bound is f(start) = g(start) + h(start)
+        int threshold = startNode.pathCost + startNode.h;
         List<String> bestPath = null;
         
         while (!stack.isEmpty()) {
@@ -467,10 +470,10 @@ public class SearchAlgorithm {
         
         double timeTaken = (System.nanoTime() - startTime) / 1e9;
         if (bestPath != null) {
-            updateOutputFile(bestPath, nodesGenerated, threshold, timeTaken);
+            updateOutputFile(bestPath, nodesGenerated + 1, threshold, timeTaken);
             return bestPath;
         } else {
-            updateNoPathOutput(nodesGenerated, timeTaken);
+            updateNoPathOutput(nodesGenerated + 1, timeTaken);
             return null;
         }
     }
@@ -521,7 +524,7 @@ public class SearchAlgorithm {
                         for (int x = 0; x < rows; x++) {
                             newState[x] = currentNode.state[x].clone();
                         }
-                        
+
                         // Make the move
                         String marble = currentNode.state[i][j];
                         newState[emptyRow][emptyCol] = marble;
@@ -594,6 +597,26 @@ public class SearchAlgorithm {
         }
         
         return path;
+    }
+
+    // Helper method to calculate the actual cost of a path
+    private static int calculatePathCost(List<String> path) {
+        int cost = 0;
+        for (String move : path) {
+            String marble = move.split(":")[1];  // Get the marble type (R, G, or B)
+            switch (marble) {
+                case "R":
+                    cost += 10;
+                    break;
+                case "G":
+                    cost += 3;
+                    break;
+                case "B":
+                    cost += 1;
+                    break;
+            }
+        }
+        return cost;
     }
 
     // Node class to represent a state in the search
