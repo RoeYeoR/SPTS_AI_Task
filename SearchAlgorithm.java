@@ -22,7 +22,10 @@ public class SearchAlgorithm {
                 result = dfidSearch(startState, goalState, openListFlag);
                 break;
             case "IDA":
-                result = idaSearch(startState, goalState, openListFlag);
+                result = idaStarSearch(startState, goalState, openListFlag);
+                break;
+            case "DFBnB":
+                result = dfbnbSearch(startState, goalState, openListFlag);
                 break;
             default:
                 System.out.println("Algorithm not recognized.");
@@ -254,112 +257,222 @@ public class SearchAlgorithm {
 
     // DFID Search Algorithm (recursive with loop avoidance)
     private static List<String> dfidSearch(String[][] startState, String[][] goalState, boolean openListFlag) {
-        for (int depth = 1; depth < Integer.MAX_VALUE; depth++) {
-            Set<String> pathStates = new HashSet<>();
-            Node startNode = new Node(startState, null, 0, 0);
-            List<String> result = limitedDFS(startNode, goalState, depth, pathStates);
-            if (result != null) {
-                return result;
+        nodesGenerated = 1;
+        long startTime = System.nanoTime();
+        
+        Node startNode = new Node(startState, null, 0, 0);
+        Stack<Node> stack = new Stack<>();
+        stack.push(startNode);
+
+        // Iterative deepening
+        for (int depth = 0; depth < Integer.MAX_VALUE; depth++) {
+            if (openListFlag) {
+                System.out.println("Current depth limit: " + depth);
             }
+
+            boolean result = limitedDFS(startNode, goalState, depth, stack, openListFlag);
+            
+            if (result) {
+                double timeTaken = (System.nanoTime() - startTime) / 1e9;
+                List<String> path = reconstructPath(stack.peek());
+                updateOutputFile(path, nodesGenerated, stack.peek().pathCost, timeTaken);
+                return path;
+            }
+            
+            // Clear stack for next iteration
+            stack.clear();
+            stack.push(startNode);
         }
+
+        double timeTaken = (System.nanoTime() - startTime) / 1e9;
+        updateNoPathOutput(nodesGenerated, timeTaken);
         return null;
     }
 
-    // Limited DFS helper for DFID (recursive implementation)
-    private static List<String> limitedDFS(Node currentNode, String[][] goalState, int limit, Set<String> pathStates) {
-        if (limit < 0) return null;
-        
+    private static boolean limitedDFS(Node currentNode, String[][] goalState, int depthLimit, Stack<Node> stack, boolean openListFlag) {
+        if (openListFlag) {
+            System.out.println("Exploring at depth " + currentNode.pathCost + ": " + Arrays.deepToString(currentNode.state));
+        }
+
+        if (currentNode.pathCost > depthLimit) {
+            return false;
+        }
+
         if (isGoalState(currentNode.state, goalState)) {
-            return reconstructPath(currentNode);
+            return true;
         }
 
-        String currentStateStr = Arrays.deepToString(currentNode.state);
-        if (pathStates.contains(currentStateStr)) {
-            return null;
-        }
-
-        if (limit == 0) return null;
-
-        pathStates.add(currentStateStr);
         List<Node> neighbors = getNeighbors(currentNode, goalState);
+        
         for (Node neighbor : neighbors) {
-            nodesGenerated++;
-            List<String> result = limitedDFS(neighbor, goalState, limit - 1, pathStates);
-            if (result != null) {
-                return result;
+            // Check for loops in current path
+            boolean isLoop = false;
+            for (Node stackNode : stack) {
+                if (Arrays.deepEquals(stackNode.state, neighbor.state)) {
+                    isLoop = true;
+                    break;
+                }
+            }
+            
+            if (!isLoop) {
+                stack.push(neighbor);
+                nodesGenerated++;
+                
+                if (limitedDFS(neighbor, goalState, depthLimit, stack, openListFlag)) {
+                    return true;
+                }
+                
+                stack.pop();
             }
         }
-        pathStates.remove(currentStateStr);
-
-        return null;
+        
+        return false;
     }
 
     // IDA* Search Algorithm
-    private static List<String> idaSearch(String[][] startState, String[][] goalState, boolean openListFlag) {
+    private static List<String> idaStarSearch(String[][] startState, String[][] goalState, boolean openListFlag) {
         nodesGenerated = 1;
         long startTime = System.nanoTime();
         
         Node startNode = new Node(startState, null, 0, Heuristic.heuristic(startState, goalState));
+        Stack<Node> stack = new Stack<>();
+        stack.push(startNode);
         int threshold = startNode.h;
 
         while (threshold < Integer.MAX_VALUE) {
-            Stack<Node> stack = new Stack<>();
-            Set<String> stackStates = new HashSet<>();
+            int minF = Integer.MAX_VALUE;
+            stack.clear();
+            stack.push(startNode);
             
-            int minCost = search(startNode, 0, threshold, goalState, stack, stackStates);
-            
-            if (minCost == 0) {
-                return reconstructPath(stack.peek());
+            while (!stack.isEmpty()) {
+                Node currentNode = stack.peek();
+                
+                if (openListFlag) {
+                    System.out.println("Current threshold: " + threshold);
+                    System.out.println("Exploring state: " + Arrays.deepToString(currentNode.state));
+                }
+
+                if (isGoalState(currentNode.state, goalState)) {
+                    double timeTaken = (System.nanoTime() - startTime) / 1e9;
+                    List<String> path = reconstructPath(currentNode);
+                    updateOutputFile(path, nodesGenerated, currentNode.pathCost, timeTaken);
+                    return path;
+                }
+
+                boolean deadEnd = true;
+                List<Node> neighbors = getNeighbors(currentNode, goalState);
+                
+                for (Node neighbor : neighbors) {
+                    int f = neighbor.pathCost + neighbor.h;
+                    if (f <= threshold) {
+                        // Check if this state is already in the stack (loop detection)
+                        boolean isLoop = false;
+                        for (Node stackNode : stack) {
+                            if (Arrays.deepEquals(stackNode.state, neighbor.state)) {
+                                isLoop = true;
+                                break;
+                            }
+                        }
+                        
+                        if (!isLoop) {
+                            stack.push(neighbor);
+                            nodesGenerated++;
+                            deadEnd = false;
+                            break;
+                        }
+                    } else {
+                        minF = Math.min(minF, f);
+                    }
+                }
+                
+                if (deadEnd) {
+                    stack.pop();
+                }
             }
             
-            if (minCost == Integer.MAX_VALUE) {
-                return null; // No solution
+            if (minF == Integer.MAX_VALUE) {
+                double timeTaken = (System.nanoTime() - startTime) / 1e9;
+                updateNoPathOutput(nodesGenerated, timeTaken);
+                return null;
             }
             
-            threshold = minCost;
+            threshold = minF;
         }
         
+        double timeTaken = (System.nanoTime() - startTime) / 1e9;
+        updateNoPathOutput(nodesGenerated, timeTaken);
         return null;
     }
 
-    // Helper method for IDA* search
-    private static int search(Node node, int g, int threshold, String[][] goalState, 
-                               Stack<Node> stack, Set<String> stackStates) {
-        int f = g + Heuristic.heuristic(node.state, goalState);
+    private static List<String> dfbnbSearch(String[][] startState, String[][] goalState, boolean openListFlag) {
+        nodesGenerated = 1;
+        long startTime = System.nanoTime();
         
-        if (f > threshold) {
-            return f;
-        }
+        Node startNode = new Node(startState, null, 0, Heuristic.heuristic(startState, goalState));
+        Stack<Node> stack = new Stack<>();
+        stack.push(startNode);
         
-        stack.push(node);
-        stackStates.add(Arrays.deepToString(node.state));
+        int threshold = Integer.MAX_VALUE;
+        List<String> bestPath = null;
         
-        if (isGoalState(node.state, goalState)) {
-            return 0;
-        }
-        
-        int minCost = Integer.MAX_VALUE;
-        List<Node> neighbors = getNeighbors(node, goalState);
-        
-        for (Node neighbor : neighbors) {
-            if (!stackStates.contains(Arrays.deepToString(neighbor.state))) {
-                nodesGenerated++;
-                int t = search(neighbor, g + 1, threshold, goalState, stack, stackStates);
-                
-                if (t == 0) {
-                    return 0;
+        while (!stack.isEmpty()) {
+            Node currentNode = stack.peek();
+            
+            if (openListFlag) {
+                System.out.println("Current threshold: " + threshold);
+                System.out.println("Exploring state: " + Arrays.deepToString(currentNode.state));
+            }
+            
+            if (isGoalState(currentNode.state, goalState)) {
+                int currentCost = currentNode.pathCost;
+                if (currentCost < threshold) {
+                    threshold = currentCost;
+                    bestPath = reconstructPath(currentNode);
                 }
-                
-                if (t < minCost) {
-                    minCost = t;
+                stack.pop();
+                continue;
+            }
+            
+            List<Node> neighbors = getNeighbors(currentNode, goalState);
+            boolean deadEnd = true;
+            
+            // Sort neighbors by f-value
+            neighbors.sort((a, b) -> (a.pathCost + a.h) - (b.pathCost + b.h));
+            
+            for (Node neighbor : neighbors) {
+                int f = neighbor.pathCost + neighbor.h;
+                if (f < threshold) {
+                    // Check if this state is already in the stack (loop detection)
+                    boolean isLoop = false;
+                    for (Node stackNode : stack) {
+                        if (Arrays.deepEquals(stackNode.state, neighbor.state)) {
+                            isLoop = true;
+                            break;
+                        }
+                    }
+                    
+                    if (!isLoop) {
+                        stack.push(neighbor);
+                        nodesGenerated++;
+                        deadEnd = false;
+                        break;
+                    }
                 }
+            }
+            
+            if (deadEnd) {
+                stack.pop();
             }
         }
         
-        stack.pop();
-        stackStates.remove(Arrays.deepToString(node.state));
-        
-        return minCost;
+        double timeTaken = (System.nanoTime() - startTime) / 1e9;
+        if (bestPath != null) {
+            updateOutputFile(bestPath, nodesGenerated, threshold, timeTaken);
+            return bestPath;
+        } else {
+            updateNoPathOutput(nodesGenerated, timeTaken);
+            return null;
+        }
     }
 
     // Helper methods to get neighbors, calculate heuristics, and reconstruct the path
@@ -368,7 +481,7 @@ public class SearchAlgorithm {
         List<Node> neighbors = new ArrayList<>();
         int rows = currentNode.state.length;
         int cols = currentNode.state[0].length;
-
+        
         // Find empty space
         int emptyRow = -1, emptyCol = -1;
         for (int i = 0; i < rows; i++) {
@@ -379,35 +492,48 @@ public class SearchAlgorithm {
                     break;
                 }
             }
+            if (emptyRow != -1) break;
         }
-
-        // Define moves (including circular moves)
-        int[][] moves = {
-            {0, 1},  // right
-            {0, -1}, // left
-            {1, 0},  // down
-            {-1, 0}  // up
-        };
-
-        for (int[] move : moves) {
-            int newRow = (emptyRow + move[0] + rows) % rows;
-            int newCol = (emptyCol + move[1] + cols) % cols;
-
-            if (!currentNode.state[newRow][newCol].equals("X")) {
-                String[][] newState = new String[rows][cols];
-                for (int i = 0; i < rows; i++) {
-                    newState[i] = currentNode.state[i].clone();
+        
+        // Try moving each marble that can move to the empty space
+        for (int i = 0; i < rows; i++) {
+            for (int j = 0; j < cols; j++) {
+                if (!currentNode.state[i][j].equals("_") && !currentNode.state[i][j].equals("X")) {
+                    boolean canMove = false;
+                    
+                    // Check if in same row
+                    if (i == emptyRow) {
+                        int dist = Math.abs(j - emptyCol);
+                        if (dist == 1 || dist == cols - 1) {
+                            canMove = true;
+                        }
+                    }
+                    // Check if in same column
+                    else if (j == emptyCol) {
+                        int dist = Math.abs(i - emptyRow);
+                        if (dist == 1 || dist == rows - 1) {
+                            canMove = true;
+                        }
+                    }
+                    
+                    if (canMove) {
+                        String[][] newState = new String[rows][cols];
+                        for (int x = 0; x < rows; x++) {
+                            newState[x] = currentNode.state[x].clone();
+                        }
+                        
+                        // Make the move
+                        String marble = currentNode.state[i][j];
+                        newState[emptyRow][emptyCol] = marble;
+                        newState[i][j] = "_";
+                        
+                        Node neighbor = new Node(newState, currentNode, currentNode.pathCost + 1, 0);
+                        neighbors.add(neighbor);
+                    }
                 }
-
-                // Swap empty space with the marble
-                newState[emptyRow][emptyCol] = currentNode.state[newRow][newCol];
-                newState[newRow][newCol] = "_";
-
-                Node neighbor = new Node(newState, currentNode, currentNode.pathCost + 1, Heuristic.heuristic(newState, goalState));
-                neighbors.add(neighbor);
             }
         }
-
+        
         return neighbors;
     }
 
