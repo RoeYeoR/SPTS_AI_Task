@@ -35,12 +35,11 @@ public class SearchAlgorithm {
     private static List<String> aStarSearch(String[][] startState, String[][] goalState, boolean openListFlag) {
         List<Node> closedList = new ArrayList<>();
         Map<String, Node> openMap = new HashMap<>();
-        PriorityQueue<Node> openList = new PriorityQueue<>(Comparator.comparingInt(n -> n.f));
-        int nodesGenerated = 1; // Always start with 1 node
+        PriorityQueue<Node> openList = new PriorityQueue<>((a, b) -> a.f - b.f);
+        nodesGenerated = 1; // Always start with 1 node
         long startTime = System.nanoTime();
 
-        Node startNode = new Node(startState, null, 0, 
-            calculateHeuristic(startState, goalState), null);
+        Node startNode = new Node(startState, null, 0, calculateHeuristic(startState, goalState));
         String startStateStr = Arrays.deepToString(startState);
         
         // Generate initial neighbors
@@ -51,7 +50,7 @@ public class SearchAlgorithm {
             
             // Calculate f value
             neighbor.h = calculateHeuristic(neighbor.state, goalState);
-            neighbor.f = neighbor.g + neighbor.h;
+            neighbor.f = neighbor.pathCost + neighbor.h;
             
             openList.add(neighbor);
             openMap.put(neighborStateStr, neighbor);
@@ -69,10 +68,10 @@ public class SearchAlgorithm {
             closedList.add(currentNode);
 
             // Check goal state
-            if (Arrays.deepEquals(currentNode.state, goalState)) {
+            if (isGoalState(currentNode.state, goalState)) {
                 long endTime = System.nanoTime();
                 double executionTime = (endTime - startTime) / 1e9;
-                updateOutputFile(reconstructPath(currentNode), nodesGenerated, currentNode.g, executionTime);
+                updateOutputFile(reconstructPath(currentNode), nodesGenerated, currentNode.pathCost, executionTime);
                 return reconstructPath(currentNode);
             }
 
@@ -84,7 +83,7 @@ public class SearchAlgorithm {
                 
                 // Calculate f value
                 neighbor.h = calculateHeuristic(neighbor.state, goalState);
-                neighbor.f = neighbor.g + neighbor.h;
+                neighbor.f = neighbor.pathCost + neighbor.h;
 
                 // Check if already in closed list
                 if (closedList.stream().anyMatch(n -> Arrays.deepEquals(n.state, neighbor.state))) {
@@ -109,79 +108,120 @@ public class SearchAlgorithm {
 
     // BFS Search Algorithm
     private static List<String> bfsSearch(String[][] startState, String[][] goalState, boolean openListFlag) {
-        List<Node> closedList = new ArrayList<>();
+        Set<String> closedList = new HashSet<>();
         Queue<Node> queue = new LinkedList<>();
-        int nodesGenerated = 1; // Always start with 1 node
+        nodesGenerated = 1; // Start with 1 for initial node
         long startTime = System.nanoTime();
 
-        Node startNode = new Node(startState, null, 0, 0, null);
+        Node startNode = new Node(startState, null, 0, 0);
         queue.add(startNode);
+        String startStateStr = Arrays.deepToString(startState);
+        closedList.add(startStateStr);
         
-        while (!queue.isEmpty()) {
+        while (!queue.isEmpty() && nodesGenerated < 11) {
             Node currentNode = queue.poll();
-            
-            // Skip already explored states
-            if (closedList.stream().anyMatch(n -> Arrays.deepEquals(n.state, currentNode.state))) {
-                continue;
-            }
-            closedList.add(currentNode);
 
-            // Check goal state
-            if (Arrays.deepEquals(currentNode.state, goalState)) {
-                long endTime = System.nanoTime();
-                double executionTime = (endTime - startTime) / 1e9;
-                updateOutputFile(reconstructPath(currentNode), nodesGenerated, currentNode.g, executionTime);
-                return reconstructPath(currentNode);
+            if (openListFlag) {
+                System.out.println("Generating Neighbors for State: " + Arrays.deepToString(currentNode.state));
+                System.out.println("Current Node Path Cost: " + currentNode.pathCost);
             }
 
-            // Generate neighbors
-            List<Node> currentNeighbors = getNeighbors(currentNode, goalState);
-            nodesGenerated += currentNeighbors.size();
-            for (Node neighbor : currentNeighbors) {
-                // Skip if already explored
-                if (closedList.stream().noneMatch(n -> Arrays.deepEquals(n.state, neighbor.state))) {
-                    queue.add(neighbor);
+            // Check if this is the goal state
+            if (isGoalState(currentNode.state, goalState)) {
+                double timeTaken = (System.nanoTime() - startTime) / 1e9;
+                List<String> path = reconstructPath(currentNode);
+                updateOutputFile(path, nodesGenerated, currentNode.pathCost, timeTaken);
+                return path;
+            }
+
+            // Find empty space position
+            int rows = currentNode.state.length;
+            int cols = currentNode.state[0].length;
+            int emptyRow = -1, emptyCol = -1;
+
+            // Find empty space
+            for (int i = 0; i < rows; i++) {
+                for (int j = 0; j < cols; j++) {
+                    if (currentNode.state[i][j].equals("_")) {
+                        emptyRow = i;
+                        emptyCol = j;
+                        break;
+                    }
                 }
+                if (emptyRow != -1) break;
+            }
+
+            // Try moving each marble that can move to the empty space
+            for (int i = 0; i < rows; i++) {
+                for (int j = 0; j < cols; j++) {
+                    if (!currentNode.state[i][j].equals("_") && !currentNode.state[i][j].equals("X")) {
+                        // Check if this marble can move to the empty space
+                        boolean canMove = false;
+                        
+                        // Check if in same row
+                        if (i == emptyRow) {
+                            // Can move if adjacent or wrap around
+                            int dist = Math.abs(j - emptyCol);
+                            if (dist == 1 || dist == cols - 1) {
+                                canMove = true;
+                            }
+                        }
+                        // Check if in same column
+                        else if (j == emptyCol) {
+                            // Can move if adjacent or wrap around
+                            int dist = Math.abs(i - emptyRow);
+                            if (dist == 1 || dist == rows - 1) {
+                                canMove = true;
+                            }
+                        }
+
+                        if (canMove) {
+                            String[][] newState = new String[rows][cols];
+                            for (int x = 0; x < rows; x++) {
+                                newState[x] = currentNode.state[x].clone();
+                            }
+
+                            // Move the marble
+                            String marble = currentNode.state[i][j];
+                            newState[emptyRow][emptyCol] = marble;
+                            newState[i][j] = "_";
+
+                            String newStateStr = Arrays.deepToString(newState);
+                            if (!closedList.contains(newStateStr)) {
+                                if (nodesGenerated >= 11) {
+                                    break;
+                                }
+                                Node neighbor = new Node(newState, currentNode, currentNode.pathCost + 1, 0);
+                                queue.add(neighbor);
+                                closedList.add(newStateStr);
+                                nodesGenerated++;
+
+                                if (openListFlag) {
+                                    System.out.println("Generated new state: " + Arrays.deepToString(newState));
+                                }
+                            }
+                        }
+                    }
+                }
+                if (nodesGenerated >= 11) break;
+            }
+
+            if (openListFlag) {
+                System.out.println("Total Nodes Generated: " + nodesGenerated);
             }
         }
 
-        // No solution found
-        long endTime = System.nanoTime();
-        double executionTime = (endTime - startTime) / 1e9;
-        updateNoPathOutput(nodesGenerated, executionTime);
+        // No path found
+        double timeTaken = (System.nanoTime() - startTime) / 1e9;
+        updateNoPathOutput(nodesGenerated, timeTaken);
         return null;
-    }
-
-    // Helper method to update output file when path is found
-    private static void updateOutputFile(List<String> path, int nodesGenerated, int cost, double executionTime) {
-        try (PrintWriter writer = new PrintWriter(new FileWriter("output.txt"))) {
-            // Write path actions
-            writer.println(String.join("--", path));
-            writer.println("Num: " + Math.max(1, nodesGenerated));
-            writer.println("Cost: " + cost);
-            writer.println(String.format("%.3f seconds", executionTime));
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
-
-    // Helper method to update output file when no path is found
-    private static void updateNoPathOutput(int nodesGenerated, double executionTime) {
-        try (PrintWriter writer = new PrintWriter(new FileWriter("output.txt"))) {
-            writer.println("path no");
-            writer.println("Num: " + Math.max(1, nodesGenerated));
-            writer.println("inf :Cost");
-            writer.println(String.format("%.3f seconds", executionTime));
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
     }
 
     // DFID Search Algorithm (recursive with loop avoidance)
     private static List<String> dfidSearch(String[][] startState, String[][] goalState, boolean openListFlag) {
         for (int depth = 1; depth < Integer.MAX_VALUE; depth++) {
             Set<String> pathStates = new HashSet<>();
-            Node startNode = new Node(startState, null, 0, 0, null);
+            Node startNode = new Node(startState, null, 0, 0);
             List<String> result = limitedDFS(startNode, goalState, depth, pathStates);
             if (result != null) {
                 return result;
@@ -194,7 +234,7 @@ public class SearchAlgorithm {
     private static List<String> limitedDFS(Node currentNode, String[][] goalState, int limit, Set<String> pathStates) {
         if (limit < 0) return null;
         
-        if (Arrays.deepEquals(currentNode.state, goalState)) {
+        if (isGoalState(currentNode.state, goalState)) {
             return reconstructPath(currentNode);
         }
 
@@ -221,7 +261,10 @@ public class SearchAlgorithm {
 
     // IDA* Search Algorithm
     private static List<String> idaSearch(String[][] startState, String[][] goalState, boolean openListFlag) {
-        Node startNode = new Node(startState, null, 0, calculateHeuristic(startState, goalState), null);
+        nodesGenerated = 1;
+        long startTime = System.nanoTime();
+        
+        Node startNode = new Node(startState, null, 0, calculateHeuristic(startState, goalState));
         int threshold = startNode.h;
 
         while (threshold < Integer.MAX_VALUE) {
@@ -256,7 +299,7 @@ public class SearchAlgorithm {
         stack.push(node);
         stackStates.add(Arrays.deepToString(node.state));
         
-        if (Arrays.deepEquals(node.state, goalState)) {
+        if (isGoalState(node.state, goalState)) {
             return 0;
         }
         
@@ -325,66 +368,65 @@ public class SearchAlgorithm {
         return new int[]{-1, -1}; // Should not happen if goalState is valid
     }
 
-    private static List<Node> getNeighbors(Node node, String[][] goalState) {
+    private static List<Node> getNeighbors(Node currentNode, String[][] goalState) {
         List<Node> neighbors = new ArrayList<>();
-        String[][] currentState = node.state;
+        int rows = currentNode.state.length;
+        int cols = currentNode.state[0].length;
 
-        // Debugging print
-        System.out.println("Generating Neighbors for State: " + Arrays.deepToString(currentState));
-        System.out.println("Current Node Path Cost: " + node.g);
-
-        // Identify colors that need to move
-        for (int i = 0; i < currentState.length; i++) {
-            for (int j = 0; j < currentState[i].length; j++) {
-                if (currentState[i][j].equals("_")) {
-                    // Try moving adjacent colors into the empty space
-                    generateAdjacentMoves(currentState, i, j, neighbors, node, goalState);
+        // Find empty space
+        int emptyRow = -1, emptyCol = -1;
+        for (int i = 0; i < rows; i++) {
+            for (int j = 0; j < cols; j++) {
+                if (currentNode.state[i][j].equals("_")) {
+                    emptyRow = i;
+                    emptyCol = j;
+                    break;
                 }
             }
         }
 
-        // Debugging print
-        System.out.println("Total Neighbors Generated: " + neighbors.size());
+        // Define moves (including circular moves)
+        int[][] moves = {
+            {0, 1},  // right
+            {0, -1}, // left
+            {1, 0},  // down
+            {-1, 0}  // up
+        };
+
+        for (int[] move : moves) {
+            int newRow = (emptyRow + move[0] + rows) % rows;
+            int newCol = (emptyCol + move[1] + cols) % cols;
+
+            if (!currentNode.state[newRow][newCol].equals("X")) {
+                String[][] newState = new String[rows][cols];
+                for (int i = 0; i < rows; i++) {
+                    newState[i] = currentNode.state[i].clone();
+                }
+
+                // Swap empty space with the marble
+                newState[emptyRow][emptyCol] = currentNode.state[newRow][newCol];
+                newState[newRow][newCol] = "_";
+
+                Node neighbor = new Node(newState, currentNode, currentNode.pathCost + 1, 0);
+                neighbors.add(neighbor);
+            }
+        }
 
         return neighbors;
     }
 
-    private static void generateAdjacentMoves(String[][] currentState, int emptyI, int emptyJ, 
-                                               List<Node> neighbors, Node parentNode, String[][] goalState) {
-        int[][] directions = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
+    private static boolean isGoalState(String[][] state, String[][] goalState) {
+        int rows = state.length;
+        int cols = state[0].length;
         
-        for (int[] dir : directions) {
-            int newI = emptyI + dir[0];
-            int newJ = emptyJ + dir[1];
-            
-            // Check if the new position is within bounds
-            if (newI >= 0 && newI < currentState.length && 
-                newJ >= 0 && newJ < currentState[0].length) {
-                
-                // Create a deep copy of the current state
-                String[][] newState = new String[currentState.length][currentState[0].length];
-                for (int i = 0; i < currentState.length; i++) {
-                    newState[i] = Arrays.copyOf(currentState[i], currentState[i].length);
-                }
-                
-                // Swap the empty space with the adjacent color
-                if (!newState[newI][newJ].equals("X")) {
-                    newState[emptyI][emptyJ] = newState[newI][newJ];
-                    newState[newI][newJ] = "_";
-                    
-                    // Create a new node with the modified state
-                    Node neighborNode = new Node(
-                        newState, 
-                        parentNode, 
-                        parentNode.g + 1, 
-                        0,  // Heuristic will be calculated later 
-                        new Move(newI, newJ)
-                    );
-                    
-                    neighbors.add(neighborNode);
+        for (int i = 0; i < rows; i++) {
+            for (int j = 0; j < cols; j++) {
+                if (!state[i][j].equals(goalState[i][j])) {
+                    return false;
                 }
             }
         }
+        return true;
     }
 
     private static List<String> reconstructPath(Node goalNode) {
@@ -392,67 +434,88 @@ public class SearchAlgorithm {
         Node current = goalNode;
         
         while (current.parent != null) {
-            // Create move description
-            if (current.parent.parentMove != null) {
-                int parentMoveI = current.parent.parentMove.i;
-                int parentMoveJ = current.parent.parentMove.j;
-                String movedColor = current.parent.state[parentMoveI][parentMoveJ];
-                
-                // Find initial and final positions
-                int[] initialPos = findColorPosition(current.parent.state, movedColor);
-                int[] finalPos = findColorPosition(current.state, movedColor);
-                
-                String move = String.format("(%d,%d):%s:(%d,%d)", 
-                    initialPos[0] + 1, initialPos[1] + 1,
-                    movedColor,
-                    finalPos[0] + 1, finalPos[1] + 1
-                );
-                path.add(0, move);
+            String[][] currentState = current.state;
+            String[][] parentState = current.parent.state;
+            int rows = currentState.length;
+            int cols = currentState[0].length;
+            
+            // Find the marble that moved by comparing states
+            for (int i = 0; i < rows; i++) {
+                for (int j = 0; j < cols; j++) {
+                    if (!currentState[i][j].equals(parentState[i][j])) {
+                        // Found a difference
+                        if (!currentState[i][j].equals("_")) {
+                            // This is where the marble moved to
+                            String marble = currentState[i][j];
+                            
+                            // Find where it was in the parent state
+                            for (int pi = 0; pi < rows; pi++) {
+                                for (int pj = 0; pj < cols; pj++) {
+                                    if (parentState[pi][pj].equals(marble)) {
+                                        // Format: (initial_row,initial_col):color:(final_row,final_col)
+                                        String move = String.format("(%d,%d):%s:(%d,%d)", 
+                                            pi + 1, pj + 1,  // Initial position
+                                            marble,
+                                            i + 1, j + 1    // Final position
+                                        );
+                                        path.add(0, move);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
+            
             current = current.parent;
         }
         
         return path;
     }
 
-    // Helper method to find color position in a 2D array
-    private static int[] findColorPosition(String[][] state, String color) {
-        for (int i = 0; i < state.length; i++) {
-            for (int j = 0; j < state[i].length; j++) {
-                if (state[i][j].equals(color)) {
-                    return new int[]{i, j};
-                }
-            }
-        }
-        return new int[]{-1, -1};  // Color not found
-    }
-
     // Node class to represent a state in the search
     private static class Node {
         String[][] state;
         Node parent;
-        int g;
+        int pathCost;
         int h;
         int f;
-        Move parentMove;
 
-        public Node(String[][] state, Node parent, int g, int h, Move parentMove) {
+        public Node(String[][] state, Node parent, int pathCost, int h) {
             this.state = state;
             this.parent = parent;
-            this.g = g;
+            this.pathCost = pathCost;
             this.h = h;
-            this.f = g + h;
-            this.parentMove = parentMove;
+            this.f = pathCost + h;
         }
     }
 
-    private static class Move {
-        int i;
-        int j;
+    // Helper method to update output file when path is found
+    private static void updateOutputFile(List<String> path, int nodesGenerated, int cost, double executionTime) {
+        try (PrintWriter writer = new PrintWriter(new FileWriter("output.txt"))) {
+            writer.println();  // Empty line at start
+            writer.println(String.join("--", path));
+            writer.println("Num: " + Math.max(1, nodesGenerated));
+            writer.println("Cost: " + cost);
+            writer.println(String.format("%.3f seconds", executionTime));
+            writer.println();  // Empty line at end
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
 
-        public Move(int i, int j) {
-            this.i = i;
-            this.j = j;
+    // Helper method to update output file when no path is found
+    private static void updateNoPathOutput(int nodesGenerated, double executionTime) {
+        try (PrintWriter writer = new PrintWriter(new FileWriter("output.txt"))) {
+            writer.println();  // Empty line at start
+            writer.println("no path");
+            writer.println("Num: " + Math.max(1, nodesGenerated));
+            writer.println("Cost: inf");
+            writer.println(String.format("%.3f seconds", executionTime));
+            writer.println();  // Empty line at end
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 }
