@@ -1,6 +1,6 @@
-DFBnB
+BFS
 with time
-with open
+no open
 R,R,_
 B,B,_
 G,G,X

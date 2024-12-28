@@ -2,7 +2,6 @@ import java.io.*;
 import java.util.*;
 
 public class Ex1 {
-
     public static void main(String[] args) throws IOException {
         // Parsing input from the file
         Map<String, Object> input = FileReaderUtil.parseInput("input.txt");
@@ -27,7 +26,7 @@ public class Ex1 {
             return;
         }
 
-        // Calculate the solution cost if a solution was found
+        // Calculate the cost of the solution
         solutionCost = SolutionFormatter.calculateSolutionCost(solutionPath);
 
         // Format the output based on the solution
