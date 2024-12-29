@@ -17,22 +17,65 @@ public class Heuristic {
                     for (int gi = 0; gi < rows; gi++) {
                         for (int gj = 0; gj < cols; gj++) {
                             if (goalState[gi][gj].equals(marble)) {
-                                // Calculate minimum moves needed
-                                int moveCount = 0;
-                                if (i != gi) moveCount++;
-                                if (j != gj) moveCount++;
+                                // Calculate Manhattan distance
+                                int dist = Math.abs(i - gi) + Math.abs(j - gj);
                                 
-                                // Add cost based on marble type
+                                // Consider circular moves
+                                // For row distance
+                                int circularRowDist = Math.min(i, gi) + (rows - Math.max(i, gi));
+                                dist = Math.min(dist, circularRowDist + Math.abs(j - gj));
+                                
+                                // For column distance
+                                int circularColDist = Math.min(j, gj) + (cols - Math.max(j, gj));
+                                dist = Math.min(dist, Math.abs(i - gi) + circularColDist);
+                                
+                                // Add cost based on marble type and distance
                                 switch (marble) {
-                                    case "R": h += moveCount * 10; break;
-                                    case "G": h += moveCount * 3; break;
-                                    case "B": h += moveCount * 1; break;
+                                    case "R": h += dist * 10; break;
+                                    case "G": h += dist * 3; break;
+                                    case "B": h += dist * 1; break;
                                 }
                                 found = true;
                                 break;
                             }
                         }
                         if (found) break;
+                    }
+                }
+            }
+        }
+        
+        // Add penalty for marbles blocking paths
+        for (int i = 0; i < rows; i++) {
+            for (int j = 0; j < cols; j++) {
+                if (currentState[i][j].equals("_")) {
+                    // Check if there are marbles that need to move through this space
+                    for (int di = -1; di <= 1; di++) {
+                        for (int dj = -1; dj <= 1; dj++) {
+                            if (di == 0 && dj == 0) continue;
+                            int ni = i + di;
+                            int nj = j + dj;
+                            if (ni >= 0 && ni < rows && nj >= 0 && nj < cols) {
+                                String marble = currentState[ni][nj];
+                                if (!marble.equals("_") && !marble.equals("X")) {
+                                    // Check if this marble needs to move through the empty space
+                                    for (int gi = 0; gi < rows; gi++) {
+                                        for (int gj = 0; gj < cols; gj++) {
+                                            if (goalState[gi][gj].equals(marble)) {
+                                                if ((gi - ni) * di > 0 || (gj - nj) * dj > 0) {
+                                                    // Marble needs to move through the empty space
+                                                    switch (marble) {
+                                                        case "R": h += 5; break;
+                                                        case "G": h += 2; break;
+                                                        case "B": h += 1; break;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
